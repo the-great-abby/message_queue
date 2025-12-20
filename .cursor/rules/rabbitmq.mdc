@@ -1,0 +1,58 @@
+# RabbitMQ External Service - Cursor Rules
+
+## Scope and Purpose
+
+These rules are **specifically for the RabbitMQ External Service codebase** in this repository. They are NOT general-purpose rules and should not be applied to other projects. These rules are intended for AI assistants working on this specific codebase to maintain consistency with existing patterns and conventions.
+
+## Project Structure
+
+- Main Makefile includes `Makefile.kubernetes` for modularity
+- All Kubernetes manifests are in the root directory
+- Scripts should be placed in the `scripts/` directory
+- Follow the existing naming conventions (kebab-case for files, lowercase for targets)
+
+## Makefile Conventions
+
+- All targets must have a `##` comment describing what they do (for help display)
+- Public targets (in main Makefile) should be short and user-friendly
+- Internal implementation targets should be prefixed appropriately (e.g., `rabbitmq-*`)
+- Use `.PHONY` declarations for all non-file targets
+- Include proper error handling and user feedback in targets
+
+## Kubernetes Manifest Standards
+
+- All resources should be in the `rabbitmq-system` namespace
+- Use consistent labels: `app.kubernetes.io/name=rabbitmq`
+- Include proper resource limits and requests
+- ServiceMonitor is optional (check for Prometheus Operator CRD before applying)
+
+## Code Patterns
+
+- Prefer shell scripts in `scripts/` for complex operations rather than inline Makefile commands
+- Use `set -e` in shell scripts for error handling
+- Provide clear user feedback for all operations
+- Check for prerequisites before executing operations (e.g., kubectl availability, namespace existence)
+
+## Wizard and Interactive Features
+
+- The wizard (`make wizard`) should list all available targets dynamically
+- Exclude meta-targets from wizard (help, wizard itself, k8s-help)
+- Provide clear, numbered menu options
+- Handle invalid input gracefully
+
+## Error Handling
+
+- Operations that modify cluster state should provide confirmation prompts where appropriate
+- Use `--ignore-not-found=true` with kubectl delete operations
+- Wait for resources to be ready where applicable (e.g., `kubectl wait`)
+- Provide timeout values for waiting operations
+
+## Documentation
+
+- Keep README.md up to date with all available targets
+- Include connection details and examples in documentation
+- Document security considerations for production use
+
+
+
+

@@ -1,0 +1,118 @@
+# RabbitMQ Management Operations
+# Provides Makefile targets for user, queue, vhost management and health checks
+
+.PHONY: user-list user-create user-delete user-permissions \
+        queue-list queue-info queue-purge queue-delete \
+        vhost-list vhost-create vhost-delete vhost-info \
+        health-check health-pod health-api health-node health-memory health-disk health-queues health-connections health-diagnostics
+
+# User Management
+user-list: ## List all RabbitMQ users
+	@./scripts/user-management.sh list
+
+user-create: ## Create a RabbitMQ user (usage: make user-create USER=username PASS=password [TAGS=tags])
+	@if [ -z "$(USER)" ] || [ -z "$(PASS)" ]; then \
+		echo "Error: USER and PASS are required" >&2; \
+		echo "Usage: make user-create USER=username PASS=password [TAGS=administrator,management]" >&2; \
+		exit 1; \
+	fi
+	@./scripts/user-management.sh create "$(USER)" "$(PASS)" "$(TAGS)"
+
+user-delete: ## Delete a RabbitMQ user (usage: make user-delete USER=username)
+	@if [ -z "$(USER)" ]; then \
+		echo "Error: USER is required" >&2; \
+		echo "Usage: make user-delete USER=username" >&2; \
+		exit 1; \
+	fi
+	@./scripts/user-management.sh delete "$(USER)"
+
+user-permissions: ## Set user permissions (usage: make user-permissions USER=username [VHOST=/] [CONFIGURE=.*] [WRITE=.*] [READ=.*])
+	@if [ -z "$(USER)" ]; then \
+		echo "Error: USER is required" >&2; \
+		echo "Usage: make user-permissions USER=username [VHOST=/] [CONFIGURE=.*] [WRITE=.*] [READ=.*]" >&2; \
+		exit 1; \
+	fi
+	@./scripts/user-management.sh permissions "$(USER)" "$(VHOST)" "$(CONFIGURE)" "$(WRITE)" "$(READ)"
+
+# Queue Management
+queue-list: ## List all queues (usage: make queue-list [VHOST=/])
+	@./scripts/queue-management.sh list "$(VHOST)"
+
+queue-info: ## Get queue information (usage: make queue-info QUEUE=queuename [VHOST=/])
+	@if [ -z "$(QUEUE)" ]; then \
+		echo "Error: QUEUE is required" >&2; \
+		echo "Usage: make queue-info QUEUE=queuename [VHOST=/]" >&2; \
+		exit 1; \
+	fi
+	@./scripts/queue-management.sh info "$(QUEUE)" "$(VHOST)"
+
+queue-purge: ## Purge all messages from a queue (usage: make queue-purge QUEUE=queuename [VHOST=/])
+	@if [ -z "$(QUEUE)" ]; then \
+		echo "Error: QUEUE is required" >&2; \
+		echo "Usage: make queue-purge QUEUE=queuename [VHOST=/]" >&2; \
+		exit 1; \
+	fi
+	@./scripts/queue-management.sh purge "$(QUEUE)" "$(VHOST)"
+
+queue-delete: ## Delete a queue (usage: make queue-delete QUEUE=queuename [VHOST=/])
+	@if [ -z "$(QUEUE)" ]; then \
+		echo "Error: QUEUE is required" >&2; \
+		echo "Usage: make queue-delete QUEUE=queuename [VHOST=/]" >&2; \
+		exit 1; \
+	fi
+	@./scripts/queue-management.sh delete "$(QUEUE)" "$(VHOST)"
+
+# Virtual Host Management
+vhost-list: ## List all virtual hosts
+	@./scripts/vhost-management.sh list
+
+vhost-create: ## Create a virtual host (usage: make vhost-create VHOST=vhostname)
+	@if [ -z "$(VHOST)" ]; then \
+		echo "Error: VHOST is required" >&2; \
+		echo "Usage: make vhost-create VHOST=vhostname" >&2; \
+		exit 1; \
+	fi
+	@./scripts/vhost-management.sh create "$(VHOST)"
+
+vhost-delete: ## Delete a virtual host (usage: make vhost-delete VHOST=vhostname)
+	@if [ -z "$(VHOST)" ]; then \
+		echo "Error: VHOST is required" >&2; \
+		echo "Usage: make vhost-delete VHOST=vhostname" >&2; \
+		exit 1; \
+	fi
+	@./scripts/vhost-management.sh delete "$(VHOST)"
+
+vhost-info: ## Get virtual host information (usage: make vhost-info [VHOST=/])
+	@./scripts/vhost-management.sh info "$(VHOST)"
+
+# Health Checks
+health-check: ## Run comprehensive RabbitMQ health check
+	@./scripts/health-check.sh check
+
+health-pod: ## Check RabbitMQ pod status
+	@./scripts/health-check.sh pod
+
+health-api: ## Check Management API accessibility
+	@./scripts/health-check.sh api
+
+health-node: ## Check node health
+	@./scripts/health-check.sh node
+
+health-memory: ## Check memory usage
+	@./scripts/health-check.sh memory
+
+health-disk: ## Check disk usage
+	@./scripts/health-check.sh disk
+
+health-queues: ## Check queue status
+	@./scripts/health-check.sh queues
+
+health-connections: ## Check active connections
+	@./scripts/health-check.sh connections
+
+health-diagnostics: ## Run rabbitmqctl diagnostics
+	@./scripts/health-check.sh diagnostics
+
+
+
+

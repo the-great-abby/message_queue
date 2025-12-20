@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rabbitmq-config
+  namespace: rabbitmq-system
+data:
+  enabled_plugins: |
+    [rabbitmq_management,rabbitmq_prometheus].
+  rabbitmq.conf: |
+    # Management UI configuration
+    management.tcp.port = 15672
+    management.tcp.ip = 0.0.0.0
+    
+    # Prometheus metrics
+    prometheus.tcp.port = 15692
+    prometheus.tcp.ip = 0.0.0.0
+    
+    # Default user configuration
+    default_user = guest
+    default_pass = guest
+    default_vhost = /
+    
+    # Allow guest user to connect from any IP (for development)
+    loopback_users.guest = false
+    
+    # Memory and disk limits
+    vm_memory_high_watermark.relative = 0.6
+    disk_free_limit.absolute = 1GB
+    
+    # Logging
+    log.console = true
+    log.console.level = info
+    
+    # Network settings
+    listeners.tcp.default = 5672
+    num_acceptors.tcp = 10
+    
+    # Heartbeat
+    heartbeat = 60
+    
+    # Queue settings
+    queue_master_locator = min-masters
+
+
+
+

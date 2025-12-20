@@ -1,0 +1,75 @@
+# RabbitMQ Kubernetes Management
+# This Makefile provides targets for managing RabbitMQ in Kubernetes
+
+.PHONY: k8s-help rabbitmq-setup rabbitmq-teardown rabbitmq-status rabbitmq-logs rabbitmq-shell rabbitmq-port-forward rabbitmq-cleanup rabbitmq-connection-info
+
+# Default target
+k8s-help: ## Show Kubernetes help message
+	@echo "RabbitMQ Kubernetes Management"
+	@echo "=============================="
+	@echo ""
+	@echo "Available targets:"
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+rabbitmq-setup: ## Deploy RabbitMQ to Kubernetes
+	@echo "Setting up RabbitMQ in Kubernetes..."
+	kubectl apply -f namespace.yaml
+	kubectl apply -f configmap.yaml
+	kubectl apply -f pvc.yaml
+	kubectl apply -f deployment.yaml
+	kubectl apply -f services.yaml
+	@echo "Checking if Prometheus Operator is available..."
+	@if kubectl get crd servicemonitors.monitoring.coreos.com >/dev/null 2>&1; then \
+		echo "Prometheus Operator detected, applying ServiceMonitor..."; \
+		kubectl apply -f servicemonitor.yaml; \
+	else \
+		echo "Prometheus Operator not found, skipping ServiceMonitor creation."; \
+		echo "To enable monitoring, install Prometheus Operator first."; \
+	fi
+	@echo "Waiting for RabbitMQ to be ready..."
+	kubectl wait --for=condition=available --timeout=300s deployment/rabbitmq -n rabbitmq-system
+	@echo "RabbitMQ is ready!"
+	@echo ""
+	@$(MAKE) rabbitmq-connection-info
+
+rabbitmq-teardown: ## Remove RabbitMQ from Kubernetes
+	@echo "Tearing down RabbitMQ..."
+	kubectl delete -f servicemonitor.yaml --ignore-not-found=true
+	kubectl delete -f services.yaml --ignore-not-found=true
+	kubectl delete -f deployment.yaml --ignore-not-found=true
+	kubectl delete -f pvc.yaml --ignore-not-found=true
+	kubectl delete -f configmap.yaml --ignore-not-found=true
+	kubectl delete -f namespace.yaml --ignore-not-found=true
+	@echo "RabbitMQ has been removed from Kubernetes"
+
+rabbitmq-status: ## Show RabbitMQ status
+	@echo "RabbitMQ Status:"
+	@echo "================"
+	kubectl get pods -n rabbitmq-system -l app.kubernetes.io/name=rabbitmq
+	@echo ""
+	kubectl get svc -n rabbitmq-system
+	@echo ""
+	kubectl get pvc -n rabbitmq-system
+
+rabbitmq-logs: ## Show RabbitMQ logs
+	kubectl logs -f deployment/rabbitmq -n rabbitmq-system
+
+rabbitmq-shell: ## Access RabbitMQ shell
+	kubectl exec -it deployment/rabbitmq -n rabbitmq-system -- rabbitmqctl
+
+rabbitmq-port-forward: ## Port forward RabbitMQ services for local access
+	@echo "Port forwarding RabbitMQ services..."
+	@echo "AMQP (Message Queue): localhost:5672"
+	@echo "Management UI: http://localhost:15672"
+	@echo "Prometheus metrics: http://localhost:15692/metrics"
+	@echo "Press Ctrl+C to stop port forwarding"
+	kubectl port-forward svc/rabbitmq 5672:5672 15672:15672 15692:15692 -n rabbitmq-system
+
+rabbitmq-connection-info: ## Show RabbitMQ NodePort connection information
+	@./scripts/get-nodeport-info.sh
+
+rabbitmq-cleanup: ## Clean up all RabbitMQ resources (including data)
+	@echo "WARNING: This will delete all RabbitMQ data permanently!"
+	@read -p "Are you sure? (y/N): " confirm && [ "$$confirm" = "y" ]
+	kubectl delete pvc rabbitmq-data -n rabbitmq-system --ignore-not-found=true
+	$(MAKE) rabbitmq-teardown
