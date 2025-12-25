@@ -12,29 +12,115 @@ k8s-help: ## Show Kubernetes help message
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 rabbitmq-setup: ## Deploy RabbitMQ to Kubernetes
+	@echo "=============================================="
 	@echo "Setting up RabbitMQ in Kubernetes..."
-	kubectl apply -f namespace.yaml
-	kubectl apply -f configmap.yaml
-	kubectl apply -f pvc.yaml
-	kubectl apply -f deployment.yaml
-	kubectl apply -f services.yaml
-	@echo "Checking if Prometheus Operator is available..."
-	@if kubectl get crd servicemonitors.monitoring.coreos.com >/dev/null 2>&1; then \
-		echo "Prometheus Operator detected, applying ServiceMonitor..."; \
-		kubectl apply -f servicemonitor.yaml; \
+	@echo "=============================================="
+	@echo ""
+	@echo "📦 Step 1/6: Creating namespace..."
+	@kubectl apply -f namespace.yaml || (echo "❌ Failed to create namespace" && exit 1)
+	@echo "✅ Namespace created/updated"
+	@echo ""
+	@echo "📦 Step 2/6: Creating ConfigMap..."
+	@kubectl apply -f configmap.yaml || (echo "❌ Failed to create ConfigMap" && exit 1)
+	@echo "✅ ConfigMap created/updated"
+	@kubectl get configmap rabbitmq-config -n rabbitmq-system
+	@echo ""
+	@echo "📦 Step 3/6: Creating PersistentVolumeClaim..."
+	@kubectl apply -f pvc.yaml || (echo "❌ Failed to create PVC" && exit 1)
+	@echo "✅ PVC created/updated"
+	@kubectl get pvc rabbitmq-data -n rabbitmq-system
+	@echo "   Waiting for PVC to be bound..."
+	@timeout=60; \
+	while [ $$timeout -gt 0 ] && ! kubectl get pvc rabbitmq-data -n rabbitmq-system -o jsonpath='{.status.phase}' | grep -q Bound; do \
+		echo "   PVC status: $$(kubectl get pvc rabbitmq-data -n rabbitmq-system -o jsonpath='{.status.phase}')"; \
+		sleep 2; \
+		timeout=$$((timeout-2)); \
+	done; \
+	if kubectl get pvc rabbitmq-data -n rabbitmq-system -o jsonpath='{.status.phase}' | grep -q Bound; then \
+		echo "✅ PVC is bound"; \
 	else \
-		echo "Prometheus Operator not found, skipping ServiceMonitor creation."; \
-		echo "To enable monitoring, install Prometheus Operator first."; \
+		echo "⚠️  PVC not bound yet, continuing anyway..."; \
 	fi
-	@echo "Waiting for RabbitMQ to be ready..."
-	kubectl wait --for=condition=available --timeout=300s deployment/rabbitmq -n rabbitmq-system
-	@echo "RabbitMQ is ready!"
+	@echo ""
+	@echo "📦 Step 4/6: Creating Deployment..."
+	@kubectl apply -f deployment.yaml || (echo "❌ Failed to create deployment" && exit 1)
+	@echo "✅ Deployment created/updated"
+	@echo "   Waiting for pods to be created..."
+	@sleep 3
+	@kubectl get pods -n rabbitmq-system -l app.kubernetes.io/name=rabbitmq
+	@echo ""
+	@echo "📦 Step 5/6: Creating Services..."
+	@kubectl apply -f services.yaml || (echo "❌ Failed to create services" && exit 1)
+	@echo "✅ Services created/updated"
+	@kubectl get svc -n rabbitmq-system
+	@echo ""
+	@echo "📦 Step 6/6: Checking Prometheus Operator..."
+	@if kubectl get crd servicemonitors.monitoring.coreos.com >/dev/null 2>&1; then \
+		echo "✅ Prometheus Operator detected, applying ServiceMonitor..."; \
+		kubectl apply -f servicemonitor.yaml || echo "⚠️  Failed to create ServiceMonitor"; \
+	else \
+		echo "ℹ️  Prometheus Operator not found, skipping ServiceMonitor creation."; \
+		echo "   To enable monitoring, install Prometheus Operator first."; \
+	fi
+	@echo ""
+	@echo "⏳ Waiting for RabbitMQ deployment to be ready (this may take a few minutes)..."
+	@echo "   Monitoring pod status..."
+	@timeout=300; \
+	interval=10; \
+	while [ $$timeout -gt 0 ]; do \
+		if kubectl wait --for=condition=available --timeout=$${interval}s deployment/rabbitmq -n rabbitmq-system 2>/dev/null; then \
+			echo "✅ RabbitMQ deployment is ready!"; \
+			break; \
+		fi; \
+		echo ""; \
+		echo "   Current status ($$((300-timeout))s elapsed):"; \
+		kubectl get pods -n rabbitmq-system -l app.kubernetes.io/name=rabbitmq -o wide || true; \
+		echo ""; \
+		pod_name=$$(kubectl get pods -n rabbitmq-system -l app.kubernetes.io/name=rabbitmq -o jsonpath='{.items[0].metadata.name}' 2>/dev/null); \
+		if [ -n "$$pod_name" ]; then \
+			echo "   Pod events:"; \
+			kubectl get events -n rabbitmq-system --field-selector involvedObject.name=$$pod_name --sort-by='.lastTimestamp' | tail -3 || true; \
+			echo ""; \
+			echo "   Pod conditions:"; \
+			kubectl get pod $$pod_name -n rabbitmq-system -o jsonpath='{range .status.conditions[*]}{.type}: {.status} ({.reason}){end}{"\n"}' || true; \
+		fi; \
+		timeout=$$((timeout-interval)); \
+		if [ $$timeout -le 0 ]; then \
+			echo ""; \
+			echo "❌ Timeout waiting for RabbitMQ to be ready!"; \
+			echo ""; \
+			echo "📋 Debugging information:"; \
+			echo "   Pod status:"; \
+			kubectl get pods -n rabbitmq-system -l app.kubernetes.io/name=rabbitmq -o wide || true; \
+			echo ""; \
+			pod_name=$$(kubectl get pods -n rabbitmq-system -l app.kubernetes.io/name=rabbitmq -o jsonpath='{.items[0].metadata.name}' 2>/dev/null); \
+			if [ -n "$$pod_name" ]; then \
+				echo "   Pod describe:"; \
+				kubectl describe pod $$pod_name -n rabbitmq-system | tail -30 || true; \
+				echo ""; \
+				echo "   Recent pod logs:"; \
+				kubectl logs $$pod_name -n rabbitmq-system --tail=50 || true; \
+			fi; \
+			echo ""; \
+			echo "   Deployment describe:"; \
+			kubectl describe deployment rabbitmq -n rabbitmq-system | tail -20 || true; \
+			exit 1; \
+		fi; \
+		sleep $$interval; \
+	done
+	@echo ""
+	@echo "✅ RabbitMQ is ready!"
 	@echo ""
 	@$(MAKE) rabbitmq-connection-info
 
 rabbitmq-teardown: ## Remove RabbitMQ from Kubernetes
 	@echo "Tearing down RabbitMQ..."
-	kubectl delete -f servicemonitor.yaml --ignore-not-found=true
+	@if kubectl get crd servicemonitors.monitoring.coreos.com >/dev/null 2>&1; then \
+		echo "Prometheus Operator detected, deleting ServiceMonitor..."; \
+		kubectl delete -f servicemonitor.yaml --ignore-not-found=true; \
+	else \
+		echo "Prometheus Operator not found, skipping ServiceMonitor deletion."; \
+	fi
 	kubectl delete -f services.yaml --ignore-not-found=true
 	kubectl delete -f deployment.yaml --ignore-not-found=true
 	kubectl delete -f pvc.yaml --ignore-not-found=true
